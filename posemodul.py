@@ -3,6 +3,7 @@ import cv2
 import mediapipe as mp
 import math
 import serial
+import scipy.spatial
 class PoseDetector:
     def __init__(self, mode=False, smooth=True, detectionCon=0.5, trackCon=0.5):
         self.mode = mode
@@ -18,6 +19,8 @@ class PoseDetector:
         self.mpDraw = mp.solutions.drawing_utils
         self.mpPose = mp.solutions.pose
         self.mp_drawing_styles = mp.solutions.drawing_styles
+        self.handsModule = mp.solutions.hands
+        self.distanceModule = scipy.spatial.distance
         self.pose = self.mpPose.Pose(static_image_mode=self.mode,
                                      smooth_landmarks=self.smooth,
                                      min_detection_confidence=self.detectionCon,
@@ -27,7 +30,7 @@ class PoseDetector:
         
     def toSerial(self, img, cx, cy):
         rows, cols, _ = img.shape
-        print("rows:",rows,"cols:",cols)
+        #print("rows:",rows,"cols:",cols)
         center_x = int(rows / 2)
         center_y = int(cols / 2)
         #print("centerX:",center_x,"centeY:",center_y)
@@ -61,21 +64,15 @@ class PoseDetector:
             # 02. 取得pose資料
             imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             self.results = self.pose.process(imgRGB)
+            
             if self.results.pose_landmarks:
                 if draw:
                     self.mpDraw.draw_landmarks(img, self.results.pose_landmarks,
                                             self.mpPose.POSE_CONNECTIONS,
-                                            landmark_drawing_spec=self.mp_drawing_styles.get_default_pose_landmarks_style())
+                                            landmark_drawing_spec=self.mp_drawing_styles.get_default_pose_landmarks_style())           
             return img
-    def findFace(self, img, center_x, center_y):
-        gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-        faces= self.face_cascade.detectMultiScale(gray,1.1,6) 
-        for cx,cy,w,h in faces:
-            cv2.rectangle(img, (cx, cy), (cx + w, cy + h), (100, 0, 255), 2)
-            cv2.circle(img, (center_x,center_y), 10, (255, 0, 0), 3)
-            cv2.circle(img,(cx+w//2,cy+h//2),2,(0,255,0),2)
-            self.toSerial(img,cx, cy)
-    def draws(self, img, cx, cy, center_x, center_y, x1, x2, y1, y2, length, bbox):
+    def draws(self,img,classId, confidence,box,classNames):
+        '''''
         cv2.circle(img, (center_x,center_y), 10, (255, 0, 0), 3)
         cv2.circle(img, (abs(x2-x1) // 2, y1), 10, (255, 0, 0), 3)
         cv2.circle(img, (abs(x2+x1) // 2, y2), 10, (255, 0, 0), 3)
@@ -89,19 +86,65 @@ class PoseDetector:
         cv2.line(img, (cx, cy), (center_x, center_y), (255, 255, 255), 3)
         cv2.rectangle(img, bbox, (255, 0, 255), 3)
         cv2.circle(img, (cx, cy), 5, (255, 0, 0), cv2.FILLED)
+        
+        
+        cv2.circle(img, (box[0]+10,box[1]+30), 10, (255, 255, 255), 3)
+        cv2.circle(img,  (self.lmList[16][1],self.lmList[12][1]), 10, (255, 0, 0), 3)
+        cv2.line(img, (self.lmList[16][1],self.lmList[12][1]), (box[0]+10,box[1]+30), (0, 255, 0), 3)
+        '''''
+        pass
+    def findLenght(self,img,frameWidth,frameHeight):
+        circleRadius = (self.boxs[0]+10,self.boxs[1]+30)
+
+        with self.handsModule.Hands(static_image_mode=False, min_detection_confidence=0.7, min_tracking_confidence=0.7, max_num_hands=1) as hands:
+                results = hands.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+
+                if results.multi_hand_landmarks != None:
+
+                    normalizedLandmark = results.multi_hand_landmarks[0].landmark[self.handsModule.HandLandmark.INDEX_FINGER_TIP]
+                    pixelCoordinatesLandmark = self.mpDraw._normalized_to_pixel_coordinates(normalizedLandmark.x,
+                                                                                            normalizedLandmark.y,
+                                                                                            frameWidth,
+                                                                                            frameHeight)
+
+
+                    if pixelCoordinatesLandmark < circleRadius:
+                        print("checked")
+                        #print(pixelCoordinatesLandmark,circleRadius)
+
+                    else:
+                        #print(pixelCoordinatesLandmark,circleRadius)
+                        print("no prob....")
+
     def findPosition(self, img):
         # 04. 劃出方格
         self.lmList = []
         self.bboxInfo = {}
-        rows, cols, _ = img.shape
-        center_x = int(rows / 2)
-        center_y = int(cols / 2)
+        
+        
+        thres = 0.5
+        classNames = []
+        classFile = 'coco.names'
+        with open(classFile, 'rt') as f:
+            classNames = f.read().rstrip('\n').split('\n')
+        configPath = 'ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt'
+        weightsPath = 'frozen_inference_graph.pb'
+        net = cv2.dnn_DetectionModel(weightsPath, configPath)
+        net.setInputSize(320, 320)
+        net.setInputScale(1.0/ 127.5)
+        net.setInputMean((127.5, 127.5, 127.5))
+        net.setInputSwapRB(True)
+        
+        classIds, confs, bbox = net.detect(img, confThreshold=thres)
+        
         if self.results.pose_landmarks:
             for id, lm in enumerate(self.results.pose_landmarks.landmark):
                 h, w, c = img.shape
                 cx, cy, cz = int(lm.x * w), int(lm.y * h), int(lm.z * w)
                 self.lmList.append([id, cx, cy, cz])
+            
             ad = abs(self.lmList[12][1] - self.lmList[11][1]) // 2 
+
             
             if (self.lmList[16][1] - ad < self.lmList[12][1] - ad):
                 x1 = self.lmList[16][1] - ad    
@@ -122,18 +165,29 @@ class PoseDetector:
                     if (self.lmList[24][2]>750):
                         y2 = self.lmList[12][2] + ad       
             y1 = self.lmList[1][2] - ad
-            print(self.lmList)
+            
+            
+            
+            if len(classIds) !=0:
+                    for classId, confidence,box in zip(classIds.flatten(),confs.flatten(), bbox):
+                        if(classNames[classId-1],(box[0]+10,box[1]+30)!='person'):
+                            cv2.circle(img, (box[1]+10,box[2]+30), 10, (255, 255, 255), 3)
+                            cv2.circle(img,  (self.lmList[16][1],self.lmList[12][1]), 10, (255, 0, 0), 3)
+                            cv2.line(img, (self.lmList[16][1],self.lmList[12][1]), (box[0]+10,box[1]+30), (0, 255, 0), 3)
+                            cv2.putText(img, classNames[classId-2],(box[1]+10,box[2]+30),cv2.FONT_HERSHEY_COMPLEX,2,(0,255,0),2)
+                            cv2.putText(img, str(confidence),(box[1]+200,box[2]+30),cv2.FONT_HERSHEY_COMPLEX,2,(0,255,0),2)
+                            
+                        else:
+                            cv2.putText(img, classNames[classId-1],(box[0]+10,box[1]+30),cv2.FONT_HERSHEY_COMPLEX,2,(0,255,0),2)
+            
+            #print(self.lmList)
             bbox = (x1, y1, x2 - x1, y2 - y1)
             cx, cy = bbox[0] + (bbox[2] // 2), bbox[1] + bbox[3] // 2
             self.bboxInfo = {"bbox": bbox, "center": (cx, cy)}
-            length = math.hypot(center_x-cx, center_y-cy)
+            self.boxs = box
             # add another functions
-            self.toSerial(img,cx, cy)
-            self.draws(img, cx, cy, center_x, center_y, x1, x2, y1, y2, length, bbox)    
+            self.toSerial(img, cx, cy)
+            #self.draws(img,classId, confidence,box,classNames)    
         else:
             print("not recognize")
         return self.lmList, self.bboxInfo
-    
-        
-    
-
