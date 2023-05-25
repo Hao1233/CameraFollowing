@@ -27,7 +27,25 @@ class PoseDetector:
                                      min_tracking_confidence=self.trackCon)  
         self.face_cascade= cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
         
-        
+    def toBuzzer(self):
+        self.ser.write(('c').encode('utf-8'))
+    def draws(self,img,classId, confidence,box,classNames):
+        '''''
+        cv2.circle(img, (center_x,center_y), 10, (255, 0, 0), 3)
+        cv2.circle(img, (abs(x2-x1) // 2, y1), 10, (255, 0, 0), 3)
+        cv2.circle(img, (abs(x2+x1) // 2, y2), 10, (255, 0, 0), 3)
+        cv2.circle(img, (x1, abs(y2-y1) // 2), 10, (255, 0, 0), 3)
+        cv2.circle(img, (x2, abs(y2+y1) // 2), 10, (255, 0, 0), 3)
+        cv2.line(img, (cx, cy), (abs(x2-x1) // 2, y1), (255, 255, 255), 3)
+        cv2.line(img, (cx, cy), (abs(x2+x1) // 2, y2), (255, 255, 255), 3)
+        cv2.line(img, (cx, cy), (x1, abs(y2-y1) // 2), (255, 255, 255), 3)
+        cv2.line(img, (cx, cy), (x2, abs(y2+y1) // 2), (255, 255, 255), 3)
+        cv2.putText(img, f'Length:{int(length)}', (320, 50), cv2.FONT_HERSHEY_COMPLEX, 1,(255,0,0), 3)
+        cv2.line(img, (cx, cy), (center_x, center_y), (255, 255, 255), 3)
+        cv2.rectangle(img, bbox, (255, 0, 255), 3)
+        cv2.circle(img, (cx, cy), 5, (255, 0, 0), cv2.FILLED)
+        '''''
+        pass
     def toSerial(self, img, cx, cy):
         rows, cols, _ = img.shape
         #print("rows:",rows,"cols:",cols)
@@ -37,8 +55,8 @@ class PoseDetector:
         medium_x = int(cx)
         medium_y = int(cy)
         #print("mediumX:",medium_x,"mediumY:",medium_y)
-        v=2
-        m=90
+        v=4
+        m=80
         if medium_x > center_x + m:
             self.Xposition += v
             if self.Xposition>= 180:
@@ -71,52 +89,7 @@ class PoseDetector:
                                             self.mpPose.POSE_CONNECTIONS,
                                             landmark_drawing_spec=self.mp_drawing_styles.get_default_pose_landmarks_style())           
             return img
-    def draws(self,img,classId, confidence,box,classNames):
-        '''''
-        cv2.circle(img, (center_x,center_y), 10, (255, 0, 0), 3)
-        cv2.circle(img, (abs(x2-x1) // 2, y1), 10, (255, 0, 0), 3)
-        cv2.circle(img, (abs(x2+x1) // 2, y2), 10, (255, 0, 0), 3)
-        cv2.circle(img, (x1, abs(y2-y1) // 2), 10, (255, 0, 0), 3)
-        cv2.circle(img, (x2, abs(y2+y1) // 2), 10, (255, 0, 0), 3)
-        cv2.line(img, (cx, cy), (abs(x2-x1) // 2, y1), (255, 255, 255), 3)
-        cv2.line(img, (cx, cy), (abs(x2+x1) // 2, y2), (255, 255, 255), 3)
-        cv2.line(img, (cx, cy), (x1, abs(y2-y1) // 2), (255, 255, 255), 3)
-        cv2.line(img, (cx, cy), (x2, abs(y2+y1) // 2), (255, 255, 255), 3)
-        cv2.putText(img, f'Length:{int(length)}', (320, 50), cv2.FONT_HERSHEY_COMPLEX, 1,(255,0,0), 3)
-        cv2.line(img, (cx, cy), (center_x, center_y), (255, 255, 255), 3)
-        cv2.rectangle(img, bbox, (255, 0, 255), 3)
-        cv2.circle(img, (cx, cy), 5, (255, 0, 0), cv2.FILLED)
-        
-        
-        cv2.circle(img, (box[0]+10,box[1]+30), 10, (255, 255, 255), 3)
-        cv2.circle(img,  (self.lmList[16][1],self.lmList[12][1]), 10, (255, 0, 0), 3)
-        cv2.line(img, (self.lmList[16][1],self.lmList[12][1]), (box[0]+10,box[1]+30), (0, 255, 0), 3)
-        '''''
-        pass
-    def findLenght(self,img,frameWidth,frameHeight):
-        circleRadius = (self.boxs[0]+10,self.boxs[1]+30)
-
-        with self.handsModule.Hands(static_image_mode=False, min_detection_confidence=0.7, min_tracking_confidence=0.7, max_num_hands=1) as hands:
-                results = hands.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-
-                if results.multi_hand_landmarks != None:
-
-                    normalizedLandmark = results.multi_hand_landmarks[0].landmark[self.handsModule.HandLandmark.INDEX_FINGER_TIP]
-                    pixelCoordinatesLandmark = self.mpDraw._normalized_to_pixel_coordinates(normalizedLandmark.x,
-                                                                                            normalizedLandmark.y,
-                                                                                            frameWidth,
-                                                                                            frameHeight)
-
-
-                    if pixelCoordinatesLandmark < circleRadius:
-                        print("checked")
-                        #print(pixelCoordinatesLandmark,circleRadius)
-
-                    else:
-                        #print(pixelCoordinatesLandmark,circleRadius)
-                        print("no prob....")
-
-    def findPosition(self, img):
+    def findPosition(self, img, frameWidth,frameHeight):
         # 04. 劃出方格
         self.lmList = []
         self.bboxInfo = {}
@@ -130,7 +103,7 @@ class PoseDetector:
         configPath = 'ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt'
         weightsPath = 'frozen_inference_graph.pb'
         net = cv2.dnn_DetectionModel(weightsPath, configPath)
-        net.setInputSize(320, 320)
+        net.setInputSize(400, 400)
         net.setInputScale(1.0/ 127.5)
         net.setInputMean((127.5, 127.5, 127.5))
         net.setInputSwapRB(True)
@@ -165,29 +138,38 @@ class PoseDetector:
                     if (self.lmList[24][2]>750):
                         y2 = self.lmList[12][2] + ad       
             y1 = self.lmList[1][2] - ad
-            
-            
+              
             
             if len(classIds) !=0:
-                    for classId, confidence,box in zip(classIds.flatten(),confs.flatten(), bbox):
-                        if(classNames[classId-1],(box[0]+10,box[1]+30)!='person'):
-                            cv2.circle(img, (box[1]+10,box[2]+30), 10, (255, 255, 255), 3)
-                            cv2.circle(img,  (self.lmList[16][1],self.lmList[12][1]), 10, (255, 0, 0), 3)
-                            cv2.line(img, (self.lmList[16][1],self.lmList[12][1]), (box[0]+10,box[1]+30), (0, 255, 0), 3)
-                            cv2.putText(img, classNames[classId-2],(box[1]+10,box[2]+30),cv2.FONT_HERSHEY_COMPLEX,2,(0,255,0),2)
-                            cv2.putText(img, str(confidence),(box[1]+200,box[2]+30),cv2.FONT_HERSHEY_COMPLEX,2,(0,255,0),2)
-                            
+                for classId, confidence,box in zip(classIds.flatten(),confs.flatten(), bbox):
+                        if(classNames[classId-1],(box[0]+10,box[1]+30)):
+                                        circleRadius = (box[0]+10,box[1]+30)
+                                        cv2.putText(img, classNames[classId-1],(box[0]+10,box[1]+30),cv2.FONT_HERSHEY_COMPLEX,2,(0,255,0),2)
+                                        with self.handsModule.Hands(static_image_mode=False, min_detection_confidence=0.7, min_tracking_confidence=0.7, max_num_hands=1) as hands:
+                                            results = hands.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+                                            
+
+                                            if results.multi_hand_landmarks != None:
+
+                                                normalizedLandmark = results.multi_hand_landmarks[0].landmark[self.handsModule.HandLandmark.INDEX_FINGER_TIP]
+                                                pixelCoordinatesLandmark = self.mpDraw._normalized_to_pixel_coordinates(normalizedLandmark.x,
+                                                                                                                        normalizedLandmark.y,
+                                                                                                                        frameWidth,
+                                                                                                                        frameHeight)
+
+                                                
+                                                for i in (classNames[classId-1],(box[0]+10,box[1]+30)):
+                                                    if(i == 'scissors'):
+                                                        if(pixelCoordinatesLandmark < (box[0]+10,box[1]+30)):
+                                                            self.toBuzzer()
                         else:
-                            cv2.putText(img, classNames[classId-1],(box[0]+10,box[1]+30),cv2.FONT_HERSHEY_COMPLEX,2,(0,255,0),2)
-            
+                            pass  
             #print(self.lmList)
             bbox = (x1, y1, x2 - x1, y2 - y1)
             cx, cy = bbox[0] + (bbox[2] // 2), bbox[1] + bbox[3] // 2
             self.bboxInfo = {"bbox": bbox, "center": (cx, cy)}
-            self.boxs = box
             # add another functions
             self.toSerial(img, cx, cy)
-            #self.draws(img,classId, confidence,box,classNames)    
         else:
             print("not recognize")
         return self.lmList, self.bboxInfo
